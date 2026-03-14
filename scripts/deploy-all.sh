@@ -148,6 +148,7 @@ wait_for_pods "kubelab" "app=backend" 120
 echo "   Deploying Frontend..."
 kubectl apply -f "$BASE_DIR/frontend.yaml"
 wait_for_pods "kubelab" "app=frontend" 120
+kubectl apply -f "$BASE_DIR/frontend-ingress.yaml"
 
 echo "✅ Base application deployed"
 echo ""
@@ -169,6 +170,7 @@ wait_for_pods "kubelab" "app=prometheus" 180
 
 echo "   Deploying Grafana..."
 kubectl apply -f "$OBSERVABILITY_DIR/grafana.yaml"
+kubectl apply -f "$OBSERVABILITY_DIR/grafana-ingress.yaml"
 wait_for_pods "kubelab" "app=grafana" 120
 
 echo "✅ Observability stack deployed"
@@ -203,12 +205,17 @@ echo ""
 NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "localhost")
 
 echo "📱 Frontend Dashboard:"
+echo "   Ingress: http://$NODE_IP/"
 echo "   NodePort: http://$NODE_IP:30080"
 echo "   Port-forward: kubectl port-forward -n kubelab svc/frontend 8080:80"
 echo "   Then visit: http://localhost:8080"
+echo "   If 8080 is already in use or your browser is on another machine:"
+echo "   kubectl port-forward -n kubelab svc/frontend 18080:80 --address 0.0.0.0"
+echo "   Then visit: http://<this-machine-ip>:18080"
 echo ""
 
 echo "📊 Grafana:"
+echo "   Ingress: http://$NODE_IP/grafana/"
 echo "   NodePort: http://$NODE_IP:30300"
 echo "   Port-forward: kubectl port-forward -n kubelab svc/grafana 3000:3000"
 echo "   Then visit: http://localhost:3000"
@@ -238,5 +245,3 @@ echo ""
 
 echo "✅ KubeLab deployment complete!"
 echo ""
-
-

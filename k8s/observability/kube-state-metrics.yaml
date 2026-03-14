@@ -16,6 +16,10 @@ rules:
   - apiGroups: [""]
     resources:
       - configmaps
+      - endpoints
+      - namespaces
+      - persistentvolumeclaims
+      - persistentvolumes
       - secrets
       - nodes
       - pods
@@ -48,9 +52,18 @@ rules:
     resources:
       - certificatesigningrequests
     verbs: ["list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources:
+      - leases
+    verbs: ["list", "watch"]
   - apiGroups: ["discovery.k8s.io"]
     resources:
       - endpointslices
+    verbs: ["list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
     verbs: ["list", "watch"]
   - apiGroups: ["storage.k8s.io"]
     resources:
@@ -153,4 +166,3 @@ spec:
       targetPort: telemetry
   selector:
     app.kubernetes.io/name: kube-state-metrics
-

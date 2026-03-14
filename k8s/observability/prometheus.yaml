@@ -277,4 +277,3 @@ spec:
       name: http
   selector:
     app: prometheus
-

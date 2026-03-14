@@ -34,6 +34,30 @@ spec:
         - protocol: TCP
           port: 3000
 ---
+# Allow the cluster ingress controller to reach the frontend service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-frontend
+  namespace: kubelab
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+---
 # Allow backend to communicate with postgres
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -133,6 +157,8 @@ spec:
         - protocol: TCP
           port: 443
         - protocol: TCP
+          port: 6443
+        - protocol: TCP
           port: 16443
 ---
 # Allow prometheus egress to Kubernetes API and scrape targets
@@ -151,6 +177,8 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 6443
         - protocol: TCP
           port: 16443
         - protocol: TCP
@@ -184,6 +212,30 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
+---
+# Allow the cluster ingress controller to reach Grafana
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-grafana
+  namespace: kubelab
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
 ---
 # Allow Grafana egress to Prometheus
 apiVersion: networking.k8s.io/v1
@@ -265,5 +317,6 @@ spec:
         - protocol: TCP
           port: 443
         - protocol: TCP
+          port: 6443
+        - protocol: TCP
           port: 16443
-
