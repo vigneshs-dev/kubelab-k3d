@@ -23,6 +23,11 @@ if ! command -v kubectl &> /dev/null; then
     exit 1
 fi
 
+HAS_CURL=1
+if ! command -v curl &> /dev/null; then
+    HAS_CURL=0
+fi
+
 # Check cluster connectivity
 echo "🔍 Checking cluster connectivity..."
 if ! kubectl cluster-info &> /dev/null; then
@@ -107,6 +112,26 @@ wait_for_pods() {
     return 1
 }
 
+probe_ingress() {
+    local name=$1
+    local path=$2
+    local url="http://127.0.0.1${path}"
+
+    if [ "$HAS_CURL" -ne 1 ]; then
+        echo "   ⚠️  curl not found, skipping ${name} probe"
+        return 0
+    fi
+
+    echo "   🔎 ${name}: ${url}"
+    if curl -fsS -I --max-time 10 "$url" >/dev/null; then
+        echo "   ✅ ${name} is reachable"
+        return 0
+    fi
+
+    echo "   ⚠️  ${name} did not respond on ${url}"
+    return 1
+}
+
 # Step 1: Create namespace
 echo "📦 Step 1/6: Creating namespace..."
 kubectl apply -f "$BASE_DIR/namespace.yaml"
@@ -131,6 +156,9 @@ echo ""
 echo "🔒 Step 3/6: Deploying security configurations..."
 kubectl apply -f "$SECURITY_DIR/rbac.yaml"
 kubectl apply -f "$SECURITY_DIR/network-policies.yaml"
+if [ -f "$SECURITY_DIR/cilium-ingress-policies.yaml" ]; then
+    kubectl apply -f "$SECURITY_DIR/cilium-ingress-policies.yaml"
+fi
 echo "✅ Security configurations deployed"
 echo ""
 
@@ -171,6 +199,7 @@ wait_for_pods "kubelab" "app=prometheus" 180
 echo "   Deploying Grafana..."
 kubectl apply -f "$OBSERVABILITY_DIR/grafana.yaml"
 kubectl apply -f "$OBSERVABILITY_DIR/grafana-ingress.yaml"
+kubectl apply -f "$OBSERVABILITY_DIR/hubble-ui-ingress.yaml"
 wait_for_pods "kubelab" "app=grafana" 120
 
 echo "✅ Observability stack deployed"
@@ -190,6 +219,12 @@ kubectl get svc -n kubelab
 echo ""
 echo "📋 Node Status:"
 kubectl get nodes
+
+echo ""
+echo "📋 Ingress Probes:"
+probe_ingress "Frontend" "/"
+probe_ingress "Grafana" "/grafana/"
+probe_ingress "Hubble UI" "/hubble/"
 
 echo ""
 echo "✅ Deployment verification complete"
@@ -225,6 +260,11 @@ echo ""
 echo "📈 Prometheus:"
 echo "   Port-forward: kubectl port-forward -n kubelab svc/prometheus 9090:9090"
 echo "   Then visit: http://localhost:9090"
+echo ""
+
+echo "🛰️  Hubble UI:"
+echo "   Ingress: http://$NODE_IP/hubble/"
+echo "   Relay API: http://$NODE_IP/hubble/"
 echo ""
 
 echo "🔧 Backend API:"

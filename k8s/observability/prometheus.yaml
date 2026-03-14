@@ -132,6 +132,67 @@ data:
           - source_labels: [__meta_kubernetes_namespace]
             target_label: namespace
 
+      # Scrape annotated Cilium/Hubble pods in kube-system
+      - job_name: 'kube-system-annotated-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - kube-system
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: keep
+            regex: .+
+          - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: (.+);(.+)
+            target_label: __address__
+            replacement: $1:$2
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            regex: (.+)
+            target_label: __metrics_path__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_k8s_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            target_label: app_kubernetes_io_name
+
+      # Scrape annotated Cilium/Hubble services in kube-system
+      - job_name: 'kube-system-annotated-services'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - kube-system
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            regex: (https?)
+            target_label: __scheme__
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            regex: (.+)
+            target_label: __metrics_path__
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            regex: (.+?)(?::\d+)?;(\d+)
+            target_label: __address__
+            replacement: $1:$2
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: service
+
       # Scrape kubelet cAdvisor for per-container CPU/memory (for CPU stress + OOMKill screenshots)
       - job_name: 'kubelet-cadvisor'
         kubernetes_sd_configs:
@@ -185,7 +246,7 @@ spec:
         app: prometheus
       annotations:
         # Change this when prometheus-config ConfigMap changes so pods roll and pick up new config
-        prometheus-config-reload: "kubelet-cadvisor"
+        prometheus-config-reload: "kubelet-cadvisor-cilium"
     spec:
       serviceAccountName: prometheus
       securityContext:

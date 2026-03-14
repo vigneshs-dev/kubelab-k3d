@@ -1,4 +1,4 @@
-# K3s Multi-Node Setup Guide (Single Host via k3d)
+# K3s Multi-Node Setup Guide (Single Host via k3d + Cilium)
 
 This project can run on K3s with `1 control-plane + 2 worker nodes` on a single machine by using `k3d`. `k3d` runs real K3s nodes inside Docker containers, which is the practical option when you have one OCI instance instead of three separate machines.
 
@@ -26,6 +26,7 @@ Install:
 - Docker
 - `kubectl`
 - `k3d`
+- `helm`
 
 If you already installed native `k3s` on this host, remove it first. A native K3s server and a k3d cluster both want host networking and API ports.
 
@@ -35,6 +36,14 @@ Typical cleanup commands for native K3s:
 sudo /usr/local/bin/k3s-uninstall.sh
 sudo /usr/local/bin/k3s-agent-uninstall.sh
 ```
+
+## What this setup uses
+
+- `k3d` to run a multi-node K3s cluster on one machine
+- `Cilium` as the CNI
+- `Cilium` kube-proxy replacement
+- `Cilium` ingress instead of Traefik
+- `Hubble` metrics so Prometheus can scrape network-layer data
 
 ## Build the cluster
 
@@ -48,16 +57,19 @@ chmod +x scripts/setup-k3s-cluster.sh
 
 What the script does:
 
-1. Checks Docker, `kubectl`, `k3d`, disk, RAM, and CPU.
+1. Checks Docker, `kubectl`, `k3d`, `helm`, disk, RAM, and CPU.
 2. Refuses to overcommit the host unless you pass `--force`.
 3. Creates a `k3d` cluster with:
    - `1` server
    - `2` agents
-   - host port `80` mapped to cluster ingress
-   - host port `443` mapped to cluster ingress
+   - k3s `flannel`, `traefik`, `servicelb`, `network-policy`, and `kube-proxy` disabled
+   - host port `80` mapped to the fixed Cilium ingress node port `32080` through the k3d load balancer
+   - host port `443` mapped to the fixed Cilium ingress node port `32443` through the k3d load balancer
    - host port `6550` mapped to the Kubernetes API
-4. Switches your `kubectl` context to `k3d-kubelab`.
-5. Waits until all nodes are `Ready`.
+4. Installs Cilium with kube-proxy replacement and pins the `cilium-ingress` service to stable node ports so k3d can expose it reliably on host `80/443`.
+5. Enables Hubble metrics and Prometheus endpoints for Cilium components.
+6. Switches your `kubectl` context to `k3d-kubelab`.
+7. Waits until all nodes are `Ready`.
 
 ## Deploy KubeLab
 
@@ -71,6 +83,21 @@ Access:
 
 - Frontend: `http://<your-instance-public-ip>/`
 - Grafana: `http://<your-instance-public-ip>/grafana/`
+- Hubble UI: `http://<your-instance-public-ip>/hubble/`
+
+## Observability changes with Cilium
+
+Because kube-proxy is replaced, network visibility now comes from Cilium and Hubble rather than the default K3s dataplane.
+
+The project is updated so that:
+
+- frontend and Grafana use the `cilium` ingress class
+- Hubble UI is enabled and served under `/hubble/`
+- network policies allow the kube-system ingress path to reach frontend and Grafana
+- Prometheus scrapes annotated Cilium and Hubble targets in `kube-system`
+- Prometheus egress allows the Cilium/Hubble metrics ports `9962` through `9965`
+
+For k3d specifically, Cilium ingress is exposed through the `cilium-ingress` service. This repo pins that service to node ports `32080` and `32443`, and k3d forwards host `80/443` to those ports. The outside world still uses normal ports `80` and `443`.
 
 ## Add another project
 

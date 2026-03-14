@@ -1,19 +1,19 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: grafana
-  namespace: kubelab
+  name: hubble-ui
+  namespace: kube-system
   labels:
-    app: grafana
+    app: hubble-ui
 spec:
   ingressClassName: cilium
   rules:
     - http:
         paths:
-          - path: /grafana
+          - path: /hubble
             pathType: Prefix
             backend:
               service:
-                name: grafana
+                name: hubble-ui
                 port:
-                  number: 3000
+                  number: 80

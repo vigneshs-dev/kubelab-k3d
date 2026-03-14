@@ -7,14 +7,21 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CILIUM_VALUES_FILE="${REPO_ROOT}/setup/cilium-values.yaml"
+
 CLUSTER_NAME="kubelab"
 SERVER_COUNT=1
 AGENT_COUNT="auto"
 API_PORT=6550
 HTTP_PORT=80
 HTTPS_PORT=443
+INGRESS_HTTP_NODEPORT=32080
+INGRESS_HTTPS_NODEPORT=32443
 DELETE_EXISTING=0
 FORCE=0
+CILIUM_VERSION="1.19.1"
 
 usage() {
     cat <<'EOF'
@@ -123,6 +130,7 @@ echo ""
 require_command docker
 require_command kubectl
 require_command k3d
+require_command helm
 require_command ss
 
 if ! docker info >/dev/null 2>&1; then
@@ -170,6 +178,7 @@ fi
 echo "Cluster shape:"
 echo "  Control planes: ${SERVER_COUNT}"
 echo "  Workers: ${AGENT_COUNT}"
+echo "  CNI: Cilium ${CILIUM_VERSION} (kube-proxy replacement enabled)"
 echo ""
 
 if command -v k3s >/dev/null 2>&1 || [[ -x /usr/local/bin/k3s ]] || [[ -f /etc/systemd/system/k3s.service ]]; then
@@ -191,6 +200,11 @@ if k3d cluster list | awk '{print $1}' | grep -qx "$CLUSTER_NAME"; then
     fi
 fi
 
+if [[ ! -f "$CILIUM_VALUES_FILE" ]]; then
+    echo "Missing Cilium values file: ${CILIUM_VALUES_FILE}" >&2
+    exit 1
+fi
+
 for port in "$API_PORT" "$HTTP_PORT" "$HTTPS_PORT"; do
     if port_in_use "$port"; then
         echo "Port ${port} is already in use. Pick a different port or stop the conflicting service." >&2
@@ -203,12 +217,45 @@ k3d cluster create "$CLUSTER_NAME" \
     --servers "$SERVER_COUNT" \
     --agents "$AGENT_COUNT" \
     --api-port "$API_PORT" \
-    --port "${HTTP_PORT}:80@loadbalancer" \
-    --port "${HTTPS_PORT}:443@loadbalancer" \
-    --wait
+    --port "${HTTP_PORT}:${INGRESS_HTTP_NODEPORT}@loadbalancer" \
+    --port "${HTTPS_PORT}:${INGRESS_HTTPS_NODEPORT}@loadbalancer" \
+    --k3s-arg "--flannel-backend=none@server:*" \
+    --k3s-arg "--disable-network-policy@server:*" \
+    --k3s-arg "--disable-kube-proxy@server:*" \
+    --k3s-arg "--disable=traefik@server:*" \
+    --k3s-arg "--disable=servicelb@server:*"
 
 kubectl config use-context "k3d-${CLUSTER_NAME}" >/dev/null
-kubectl wait --for=condition=Ready node --all --timeout=180s >/dev/null
+
+echo "Waiting for Kubernetes API..."
+timeout 120 bash -c 'until kubectl cluster-info >/dev/null 2>&1; do sleep 2; done'
+
+API_HOST="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${CLUSTER_NAME}-server-0")"
+if [[ -z "$API_HOST" ]]; then
+    echo "Could not determine the k3d server node IP." >&2
+    exit 1
+fi
+
+echo "Installing Cilium..."
+helm repo add cilium https://helm.cilium.io --force-update >/dev/null
+helm repo update >/dev/null
+helm upgrade --install cilium cilium/cilium \
+    --namespace kube-system \
+    --version "$CILIUM_VERSION" \
+    --values "$CILIUM_VALUES_FILE" \
+    --set k8sServiceHost="$API_HOST" \
+    --set k8sServicePort=6443
+
+kubectl rollout status daemonset/cilium -n kube-system --timeout=300s >/dev/null
+kubectl rollout status deployment/cilium-operator -n kube-system --timeout=300s >/dev/null
+kubectl rollout status deployment/hubble-relay -n kube-system --timeout=300s >/dev/null
+kubectl wait --for=condition=Ready node --all --timeout=300s >/dev/null
+
+timeout 120 bash -c 'until kubectl get svc -n kube-system cilium-ingress >/dev/null 2>&1; do sleep 2; done'
+
+echo "Pinning Cilium ingress node ports for k3d public listeners..."
+kubectl patch svc -n kube-system cilium-ingress --type merge -p \
+    "{\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":80,\"nodePort\":${INGRESS_HTTP_NODEPORT}},{\"name\":\"https\",\"port\":443,\"protocol\":\"TCP\",\"targetPort\":443,\"nodePort\":${INGRESS_HTTPS_NODEPORT}}]}}" >/dev/null
 
 echo ""
 echo "✅ Cluster ready"
@@ -221,12 +268,15 @@ PUBLIC_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo "Next steps:"
 echo "  1. Verify context: kubectl config current-context"
 echo "  2. Create your secrets file if needed: cp k8s/secrets.yaml.example k8s/secrets.yaml"
-echo "  3. Deploy KubeLab: ./scripts/deploy-all.sh"
-echo "  4. Frontend:  http://${PUBLIC_IP:-<public-ip>}/"
-echo "  5. Grafana:   http://${PUBLIC_IP:-<public-ip>}/grafana/"
-echo "  6. Another project: deploy it into a separate namespace"
+echo "  3. Confirm Cilium is healthy: kubectl get pods -n kube-system"
+echo "  4. Deploy KubeLab: ./scripts/deploy-all.sh"
+echo "  5. Frontend:  http://${PUBLIC_IP:-<public-ip>}/"
+echo "  6. Grafana:   http://${PUBLIC_IP:-<public-ip>}/grafana/"
+echo "  7. Another project: deploy it into a separate namespace"
 echo ""
 echo "Notes:"
 echo "  - On this host, 2 workers is the recommended maximum."
+echo "  - Ingress is served by Cilium through the cilium-ingress service on fixed node ports ${INGRESS_HTTP_NODEPORT}/${INGRESS_HTTPS_NODEPORT} behind the k3d public listener."
+echo "  - Prometheus is configured to scrape Cilium and Hubble metrics in kube-system."
 echo "  - If you add another project, prefer a new namespace and modest resource requests."
 echo "  - Prometheus/Grafana plus another app can still fit, but avoid high replica counts on 2 vCPU."

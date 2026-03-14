@@ -125,6 +125,8 @@ kubectl auth can-i delete pods --as=system:serviceaccount:kubelab:kubelab-backen
 
 **Build-and-push script hangs?** It is waiting for "Push images? (y/N)". Use `./scripts/build-and-push.sh <username> latest -y` to skip the prompt. See [docker-setup.md](setup/docker-setup.md#troubleshooting).
 
+**Running on k3d + Cilium and something still feels off?** See the full incident guide: [k3d + Cilium troubleshooting guide](docs/k3d-cilium-troubleshooting-guide.md).
+
 ## Reference
 
 [Architecture](docs/architecture.md) · [All Scenarios](docs/failure-scenarios.md) · [Interview Prep](docs/interview-prep.md) · [Docker Compose preview](setup/docker-compose-preview.md) · [MicroK8s Setup](setup/k8s-cluster-setup.md)

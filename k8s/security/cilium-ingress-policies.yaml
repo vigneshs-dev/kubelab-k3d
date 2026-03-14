@@ -1,0 +1,33 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cilium-ingress-to-frontend
+  namespace: kubelab
+spec:
+  endpointSelector:
+    matchLabels:
+      app: frontend
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-cilium-ingress-to-grafana
+  namespace: kubelab
+spec:
+  endpointSelector:
+    matchLabels:
+      app: grafana
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP

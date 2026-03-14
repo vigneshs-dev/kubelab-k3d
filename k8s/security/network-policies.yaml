@@ -34,11 +34,11 @@ spec:
         - protocol: TCP
           port: 3000
 ---
-# Allow the cluster ingress controller to reach the frontend service
+# Allow the Cilium ingress controller in kube-system to reach the frontend service
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-traefik-to-frontend
+  name: allow-cilium-ingress-to-frontend
   namespace: kubelab
 spec:
   podSelector:
@@ -51,9 +51,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 8080
@@ -186,6 +183,14 @@ spec:
         - protocol: TCP
           port: 9100
         - protocol: TCP
+          port: 9962
+        - protocol: TCP
+          port: 9963
+        - protocol: TCP
+          port: 9964
+        - protocol: TCP
+          port: 9965
+        - protocol: TCP
           port: 8080
         - protocol: TCP
           port: 3000
@@ -213,11 +218,11 @@ spec:
         - protocol: TCP
           port: 9090
 ---
-# Allow the cluster ingress controller to reach Grafana
+# Allow the Cilium ingress controller in kube-system to reach Grafana
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-traefik-to-grafana
+  name: allow-cilium-ingress-to-grafana
   namespace: kubelab
 spec:
   podSelector:
@@ -230,9 +235,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 3000
